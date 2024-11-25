@@ -165,8 +165,8 @@ elif page == "Insights":
 
     # Create a DataFrame with labeled rows
     data = {
-        "Metric": ["Accuracy", "IoU"],
-        "Segmentation Model": [0.94, 0.79],
+        "Metric": ["Accuracy", "IoU", "Dice Loss"],
+        "Segmentation Model": [0.94, 0.78, 0.20],
     }
     df = pd.DataFrame(data).set_index("Metric")
 
@@ -220,8 +220,6 @@ if page == "Feedback":
         else:
             st.warning("Feedback cannot be empty. Please enter your feedback.")
 
-
-# Meet the Team Page
 # Meet the Team Page
 elif page == "Meet the team":
     st.markdown("### Meet The Team 👩🏾‍💻👩🏾‍💻")
