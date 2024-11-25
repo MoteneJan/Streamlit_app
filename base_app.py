@@ -2,12 +2,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import tensorflow as tf
-from PIL import Image, ImageDraw, ImageEnhance, ImageOps
+from tensorflow.keras.metrics import MeanIoU
+from PIL import Image
 import cv2
 from io import BytesIO
 
 # Setting the page configuration
-st.set_page_config(page_title="Height Segmentation Model", layout="wide")
+st.set_page_config(page_title="Segmentation Model", layout="wide")
 
 # Sidebar for navigation
 st.sidebar.title("Navigation Pane ⤵️")
@@ -17,17 +18,25 @@ st.sidebar.markdown("<h3 style='color: white;'>Go to:</h3>", unsafe_allow_html=T
 # Sidebar options
 page = st.sidebar.selectbox("Select Page", ["Home", "Predictions", "Images and Masks", "Insights", "Meet the team"])
 
-# Load models for height and segmentation prediction
-@st.cache_resource
-def load_height_model():
-    height_model = tf.keras.models.load_model('model.h5')
-    return height_model
+def dice_loss(y_true, y_pred):
+    smooth = 1e-6
+    intersection = tf.reduce_sum(y_true * y_pred)
+    union = tf.reduce_sum(y_true) + tf.reduce_sum(y_pred)
+    return 1 - (2 * intersection + smooth) / (union + smooth)
 
+# Load segmentation model for predictions
 @st.cache_resource
 def load_segmentation_model():
-    segmentation_model = tf.keras.models.load_model('model.h5')
-    return segmentation_model
-    
+    try:
+        return tf.keras.models.load_model(
+            'final_model_resunet_finetuned_lr_reduced_5.h5',
+            custom_objects={'dice_loss': dice_loss, 'MeanIoU': MeanIoU},compile=False   
+        )
+    except Exception as e:
+        st.error(f"Error loading Segmentation Model: {e}")
+        return None
+
+
 # Custom CSS for consistent button styling and footer positioning
 st.markdown(
     """
@@ -57,18 +66,13 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Initialize session state for the generated mask
-if "generated_mask" not in st.session_state:
-    st.session_state["generated_mask"] = None
-
 # Preprocess the input image for the model
 def preprocess_image(image, target_size=(256, 256)):
     image = image.resize(target_size)  # Resize to model input size
     image_array = np.array(image) / 255.0  # Normalize to [0, 1]
-    if len(image_array.shape) == 4:  # Grayscale image
+    if len(image_array.shape) == 2:  # Grayscale image
         image_array = np.stack([image_array] * 3, axis=-1)  # Convert to RGB
-    image_array = np.expand_dims(image_array, axis=0)  # Add batch dimension
-    return image_array
+    return np.expand_dims(image_array, axis=0)
 
 # Postprocess the mask for visualization
 def postprocess_mask(mask):
@@ -88,15 +92,14 @@ def postprocess_mask(mask):
     mask = (mask > 0.5).astype(np.uint8) * 255  # Threshold and scale to [0, 255]
     return Image.fromarray(mask)
 
-# Load both models
-height_model = load_height_model()
+# Load model
 segmentation_model = load_segmentation_model()
-st.title("Welcome to Height Segmentation Model 📊🛰️")
+st.title("Welcome to Semantic Segmentation Model 📊🛰️")
 
 # Home Page
 if page == "Home":
-    st.markdown("""This application allows users to upload satellite images and receive height and segmentation predictions based on a trained model.""")
-    st.image("sample.png")
+    st.markdown("""This application allows users to upload satellite images and receive segmentation predictions based on a trained model.""")
+    st.image("New_image.png")
 
     # Add label above download button
     st.markdown("""Welcome, you can access and download our project documentation here.""")
@@ -111,7 +114,7 @@ if page == "Predictions":
     st.markdown("### Make Predictions🚀")
     
     # Model selection
-    model_type = st.selectbox("Select Model Type", ["Height Model", "Segmentation Model"])
+    # model_type = st.selectbox("Select Model Type", ["Segmentation Model"])
 
     # Sample images for testing
     st.subheader("Select Samples from Test Set")
@@ -148,43 +151,15 @@ if page == "Predictions":
         selected_image = Image.open(uploaded_file)
     
     if selected_image:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image(selected_image, caption="Original Image", use_column_width=True)
+        st.image(selected_image, caption="Original Image", use_column_width=True)
 
-        # Generate Mask Button
-        if st.button("Generate Mask"):
+        # Make Predictions Button
+        if st.button("Make Predictions"):
             preprocessed_image = preprocess_image(selected_image)
             mask = segmentation_model.predict(preprocessed_image)
             mask_image = postprocess_mask(mask)
-            st.session_state["generated_mask"] = mask_image  # Save mask to session state
-        
-        # Display the persistent mask
-        if st.session_state["generated_mask"] is not None:
-            with col2:
-                st.image(st.session_state["generated_mask"], caption="Generated Mask", use_column_width=True)
-
-    if selected_image is not None:
-        # Model prediction section
-        if st.button("Run Model"):
-            # Preprocess the image for model input
-            img_array = np.array(selected_image.resize((256, 256))) / 255.0
-            img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
-
-            # Run the selected model based on the model type
-            if model_type == "Height Model":
-                height_prediction = height_model.predict(img_array)
-                st.subheader("Height Model Prediction")
-                st.image(height_prediction[0], caption='Height Output', use_column_width=True)
-                st.write("Performance metrics: []")
-
-            elif model_type == "Segmentation Model":
-                segmentation_prediction = segmentation_model.predict(img_array)
-                st.subheader("Segmentation Model Prediction")
-                # Fixed to use index [0] for the output
-                st.image(segmentation_prediction[0], caption='Segmentation Output', use_column_width=True)
-                st.write("Test Mean IoU: 0.74")
-
+            st.image(mask_image, caption="Segmentation Output", use_column_width=True)
+         
 # Insights Page
 elif page == "Insights":
     st.markdown("### Key Insights")
@@ -193,8 +168,7 @@ elif page == "Insights":
     # Create a DataFrame with labeled rows
     data = {
         "Metric": ["Accuracy", "IoU"],
-        "Height Model": [0.9, 0.85],
-        "Segmentation Model": [0.94, 0.74],
+        "Segmentation Model": [0.94, 0.79],
     }
     df = pd.DataFrame(data).set_index("Metric")
 
@@ -240,7 +214,7 @@ elif page == "Meet the team":
             "name": "EMMANUEL NKHUBALALE - Data Science Intern | Team Lead",
             "photo": "Nkadimeng.jpg",
             "email": "physimanuel@gmail.com",
-            "linkedin": "https://linkedin.com/in/emmanuel"
+            "linkedin": "https://www.linkedin.com/Emmanuel"
         },
         {
             "name": "NOLWAZI MNDEBELE - Data Science Intern | Project Manager",
@@ -268,7 +242,7 @@ elif page == "Meet the team":
         },
         {
             "name": "MUWANWA TSHIKOVHI - Data Science Intern",
-            "photo": "test_image1.jpg",
+            "photo": "Muwanwa.jpg",
             "email": "tshikovhimuwanwa@gmail.com",
             "linkedin": "https://linkedin.com/in/muwanwa"
         },
@@ -288,13 +262,13 @@ elif page == "Meet the team":
             st.markdown(f"**Name**: {member['name']}")
             st.markdown(f"**📧 Email**: {member['email']}")
             st.markdown(f"**🟦LinkedIn**: {member['linkedin']}")
-
+  
 # Footer section
 st.markdown(
     """
     <div class="footer">
-        This application aims to assist in optimizing telecommunications network design by providing accurate height and segmentation outputs from satellite imagery.<br>
-        Height Segmentation Model Team B &copy; 2024
+        This application aims to assist in optimizing telecommunications network design by providing accurate segmentation outputs from satellite imagery.<br>
+        Segmentation Model Team B &copy; 2024
     </div>
     """,
     unsafe_allow_html=True
