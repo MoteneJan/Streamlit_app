@@ -257,7 +257,7 @@ elif page == "Meet the team":
             "name": "JAN MOTENE - Data Science Intern",
             "photo": "Jan.jpg",
             "email": "motenejo@gmail.com",
-            "linkedin": "https://linkedin.com/in/jan"
+            "linkedin": "https://www.linkedin.com/in/jan-motene-4864771b4/"
         },
         {
             "name": "ZAMANCWABE MAKHATHINI - Data Science Intern/ Engineer",
